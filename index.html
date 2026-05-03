@@ -84,6 +84,19 @@
       { note: 11, hasBlackNext: false }              
     ];
 
+    // 음정 간격(Interval)에 따른 도수 이름 매핑
+    const getIntervalName = (interval) => {
+      const names = {
+        0: '1도(Root)', 3: 'b3도', 4: '3도', 5: '4도', 
+        6: 'b5도', 7: '5도', 8: '#5도', 9: 'bb7도', 
+        10: 'b7도', 11: '7도', 
+        13: 'b9', 14: '9', 15: '#9',
+        17: '11', 18: '#11', 
+        20: 'b13', 21: '13'
+      };
+      return names[interval] || '';
+    };
+
     function App() {
       const [rootNote, setRootNote] = useState(0); 
       const [selectedTriadId, setSelectedTriadId] = useState('maj'); 
@@ -285,6 +298,7 @@
                   const noteData = getNoteData(note.absoluteIndex);
                   return (
                     <div key={`note-${index}`} className="flex flex-col items-center">
+                      <span className="text-[10px] md:text-xs font-bold text-sky-600 mb-1 px-2 py-0.5 bg-sky-100 rounded-full">{getIntervalName(note.interval)}</span>
                       <span className="text-2xl font-bold text-slate-800">{noteData.label}</span>
                       <span className="text-sm text-slate-500">{noteData.ko}</span>
                     </div>

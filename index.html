@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Piano Chord Finder</title>
+  
+  <!-- 1. 폰트 및 스타일 (Tailwind CSS) 불러오기 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 2. React 라이브러리 불러오기 -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* 스크롤바 숨기기 스타일 */
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-100">
+
+  <!-- 앱이 실행될 빈 공간 -->
+  <div id="root"></div>
+
+  <!-- 3. 앱 코드 (React) -->
+  <script type="text/babel">
+    const { useState } = React;
+
+    // 전체 12음계 데이터
+    const ALL_NOTES = [
+      { id: 0, label: 'C', ko: '도', type: 'white' },
+      { id: 1, label: 'C#', ko: '도#', type: 'black' },
+      { id: 2, label: 'D', ko: '레', type: 'white' },
+      { id: 3, label: 'Eb', ko: '미b', type: 'black' },
+      { id: 4, label: 'E', ko: '미', type: 'white' },
+      { id: 5, label: 'F', ko: '파', type: 'white' },
+      { id: 6, label: 'F#', ko: '파#', type: 'black' },
+      { id: 7, label: 'G', ko: '솔', type: 'white' },
+      { id: 8, label: 'Ab', ko: '라b', type: 'black' },
+      { id: 9, label: 'A', ko: '라', type: 'white' },
+      { id: 10, label: 'Bb', ko: '시b', type: 'black' },
+      { id: 11, label: 'B', ko: '시', type: 'white' }
+    ];
+
+    // 3화음(Triad)
+    const TRIADS = [
+      { id: 'maj', name: 'Major', suffix: '', intervals: [0, 4, 7] },
+      { id: 'min', name: 'Minor', suffix: 'm', intervals: [0, 3, 7] },
+      { id: 'dim', name: 'Diminished', suffix: 'dim', intervals: [0, 3, 6] },
+      { id: 'aug', name: 'Augmented', suffix: 'aug', intervals: [0, 4, 8] },
+      { id: 'sus4', name: 'sus4', suffix: 'sus4', intervals: [0, 5, 7] }
+    ];
+
+    // 7화음(7th)
+    const SEVENTHS = [
+      { id: 'none', name: '없음 (-)', intervals: [] },
+      { id: 'maj7', name: 'Major 7 (M7)', intervals: [11] },
+      { id: 'min7', name: 'Minor 7 (b7)', intervals: [10] },
+      { id: 'dim7', name: 'Dim 7 (bb7)', intervals: [9] }
+    ];
+
+    // 텐션(Tension)
+    const TENSIONS = [
+      { id: 'none', name: '없음 (-)', suffix: '', intervals: [] },
+      { id: '9', name: '9 (또는 add9)', suffix: 'add9', replace7: '9', intervals: [14] },
+      { id: 'b9', name: 'b9', suffix: '(b9)', intervals: [13] },
+      { id: 'sharp9', name: '#9', suffix: '(#9)', intervals: [15] },
+      { id: '11', name: '11', suffix: '(11)', replace7: '11', intervals: [14, 17] },
+      { id: 'sharp11', name: '#11', suffix: '(#11)', intervals: [14, 18] },
+      { id: '13', name: '13', suffix: '(13)', replace7: '13', intervals: [14, 21] },
+      { id: 'b13', name: 'b13', suffix: '(b13)', intervals: [14, 20] }
+    ];
+
+    // 피아노 건반 구조 (1옥타브 기준)
+    const PIANO_LAYOUT_TEMPLATE = [
+      { note: 0, hasBlackNext: true, blackNote: 1 }, 
+      { note: 2, hasBlackNext: true, blackNote: 3 }, 
+      { note: 4, hasBlackNext: false },              
+      { note: 5, hasBlackNext: true, blackNote: 6 }, 
+      { note: 7, hasBlackNext: true, blackNote: 8 }, 
+      { note: 9, hasBlackNext: true, blackNote: 10 },
+      { note: 11, hasBlackNext: false }              
+    ];
+
+    function App() {
+      const [rootNote, setRootNote] = useState(0); 
+      const [selectedTriadId, setSelectedTriadId] = useState('maj'); 
+      const [selectedSeventhId, setSelectedSeventhId] = useState('none');
+      const [selectedTensionId, setSelectedTensionId] = useState('none');
+      const [openDropdown, setOpenDropdown] = useState(null);
+
+      const currentTriad = TRIADS.find(t => t.id === selectedTriadId);
+      const currentSeventh = SEVENTHS.find(s => s.id === selectedSeventhId);
+      const currentTension = TENSIONS.find(t => t.id === selectedTensionId);
+      const rootNoteData = ALL_NOTES.find(n => n.id === rootNote);
+      
+      const rawIntervals = [...currentTriad.intervals, ...currentSeventh.intervals, ...currentTension.intervals];
+      const uniqueIntervals = Array.from(new Set(rawIntervals)).sort((a, b) => a - b);
+      
+      const activeNotes = uniqueIntervals.map(interval => ({
+        absoluteIndex: rootNote + interval,
+        interval: interval
+      }));
+
+      let currentChordName = rootNoteData.label;
+      let suffix = '';
+
+      if (currentTriad.id === 'maj') {
+        if (currentSeventh.id === 'maj7') suffix = 'M7';
+        else if (currentSeventh.id === 'min7') suffix = '7';
+        else if (currentSeventh.id === 'dim7') suffix = '(dim7)'; 
+      } else if (currentTriad.id === 'min') {
+        if (currentSeventh.id === 'none') suffix = 'm';
+        else if (currentSeventh.id === 'maj7') suffix = 'mM7';
+        else if (currentSeventh.id === 'min7') suffix = 'm7';
+        else if (currentSeventh.id === 'dim7') suffix = 'm(dim7)'; 
+      } else if (currentTriad.id === 'dim') {
+        if (currentSeventh.id === 'none') suffix = 'dim';
+        else if (currentSeventh.id === 'maj7') suffix = 'dim(M7)';
+        else if (currentSeventh.id === 'min7') suffix = 'm7b5';
+        else if (currentSeventh.id === 'dim7') suffix = 'dim7';
+      } else if (currentTriad.id === 'aug') {
+        if (currentSeventh.id === 'none') suffix = 'aug';
+        else if (currentSeventh.id === 'maj7') suffix = 'augM7';
+        else if (currentSeventh.id === 'min7') suffix = 'aug7';
+        else if (currentSeventh.id === 'dim7') suffix = 'aug(dim7)';
+      } else if (currentTriad.id === 'sus4') {
+        if (currentSeventh.id === 'none') suffix = 'sus4';
+        else if (currentSeventh.id === 'maj7') suffix = 'M7sus4';
+        else if (currentSeventh.id === 'min7') suffix = '7sus4';
+        else if (currentSeventh.id === 'dim7') suffix = '(dim7)sus4';
+      }
+
+      if (currentTension.id !== 'none') {
+        if (currentSeventh.id !== 'none') {
+          if (currentTension.replace7) {
+            if (suffix.includes('7sus4')) suffix = suffix.replace('7sus4', currentTension.replace7 + 'sus4');
+            else if (suffix.includes('m7b5')) suffix = suffix.replace('m7b5', 'm' + currentTension.replace7 + 'b5');
+            else suffix = suffix.replace('7', currentTension.replace7);
+          } else {
+            suffix += currentTension.suffix;
+          }
+        } else {
+          if (currentTension.id === '9') {
+             if (suffix === '' || suffix === 'm') suffix += 'add9';
+             else suffix += '(add9)';
+          } else if (currentTension.id === '11') {
+             suffix += '(add11)';
+          } else {
+             suffix += currentTension.suffix;
+          }
+        }
+      }
+      currentChordName += suffix;
+
+      const playChord = () => {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        
+        const ctx = new AudioContext();
+        const now = ctx.currentTime;
+
+        activeNotes.forEach((note, index) => {
+          const osc = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+
+          const frequency = 261.625565 * Math.pow(2, note.absoluteIndex / 12);
+          osc.type = 'triangle'; 
+          osc.frequency.value = frequency;
+
+          osc.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          const maxVolume = 0.6 / activeNotes.length;
+          const delay = index * 0.02; 
+
+          gainNode.gain.setValueAtTime(0, now + delay);
+          gainNode.gain.linearRampToValueAtTime(maxVolume, now + delay + 0.02);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, now + delay + 1.2);
+
+          osc.start(now + delay);
+          osc.stop(now + delay + 1.2);
+        });
+      };
+
+      const generatePianoKeys = () => {
+        let keys = [];
+        for (let octave = 0; octave < 3; octave++) {
+          PIANO_LAYOUT_TEMPLATE.forEach(whiteKey => {
+            keys.push({
+              white: whiteKey.note + (octave * 12),
+              hasBlack: whiteKey.hasBlackNext,
+              black: whiteKey.hasBlackNext ? whiteKey.blackNote + (octave * 12) : null
+            });
+          });
+        }
+        return keys;
+      };
+
+      const isNoteActive = (noteIndex) => activeNotes.some(n => n.absoluteIndex === noteIndex);
+      const getNoteData = (noteIndex) => ALL_NOTES[noteIndex % 12];
+
+      return (
+        <div className="min-h-screen p-4 md:p-8 font-sans flex items-center justify-center">
+          <div className="max-w-5xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+            
+            <div className="bg-slate-800 p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-white mb-1">Advanced Chord Finder</h1>
+                <p className="text-slate-400 text-sm">기본 화음부터 텐션 코드까지 확인해 보세요.</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-3xl font-bold text-amber-400 w-40 text-center tracking-wider">
+                  {currentChordName}
+                </div>
+                <button 
+                  onClick={playChord}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-3 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-md shrink-0"
+                >
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                  소리 듣기
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 md:p-8 space-y-8">
+              
+              <div className="relative">
+                {openDropdown && (
+                  <div className="fixed inset-0 z-40" onClick={() => setOpenDropdown(null)} />
+                )}
+
+                <div className="relative z-50 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+                  {[
+                    { id: 'root', title: '1. 근음 (Root)', items: ALL_NOTES, selected: rootNote, setFn: setRootNote, renderItem: n => `${n.label} (${n.ko})` },
+                    { id: 'triad', title: '2. 3화음 (Triad)', items: TRIADS, selected: selectedTriadId, setFn: setSelectedTriadId, renderItem: t => t.name },
+                    { id: 'seventh', title: '3. 7음 (7th)', items: SEVENTHS, selected: selectedSeventhId, setFn: setSelectedSeventhId, renderItem: s => s.name },
+                    { id: 'tension', title: '4. 텐션 (Tension)', items: TENSIONS, selected: selectedTensionId, setFn: setSelectedTensionId, renderItem: t => t.name }
+                  ].map(config => {
+                    const isOpen = openDropdown === config.id;
+                    const selectedItem = config.items.find(item => item.id === config.selected);
+
+                    return (
+                      <div key={config.id} className="relative flex flex-col">
+                        <h2 className="text-xs md:text-sm font-semibold text-slate-600 uppercase tracking-wider mb-2 text-center">
+                          {config.title}
+                        </h2>
+                        
+                        <button
+                          onClick={() => setOpenDropdown(isOpen ? null : config.id)}
+                          className={`w-full flex justify-between items-center px-3 py-3 rounded-lg border-2 font-bold transition-all text-sm md:text-base
+                            ${isOpen ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-100 shadow-sm'}`}
+                        >
+                          <span className="truncate">{config.renderItem(selectedItem)}</span>
+                          <svg className={`w-4 h-4 ml-2 shrink-0 transition-transform ${isOpen ? 'rotate-180 text-white' : 'text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+
+                        {isOpen && (
+                          <div className="absolute top-full left-0 right-0 mt-2 z-50">
+                            <ul className="max-h-60 overflow-y-auto border border-slate-200 rounded-lg shadow-xl bg-white scrollbar-hide py-1">
+                              {config.items.map(item => (
+                                <li key={`drop-${item.id}`}>
+                                  <button
+                                    onClick={() => { config.setFn(item.id); setOpenDropdown(null); }}
+                                    className={`w-full text-left px-4 py-3 text-sm md:text-base font-bold transition-colors border-b border-slate-100 last:border-0
+                                      ${config.selected === item.id ? 'bg-slate-800 text-white' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'}`}
+                                  >
+                                    {config.renderItem(item)}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-5 border border-slate-200 flex flex-wrap justify-center gap-6 md:gap-12">
+                {activeNotes.map((note, index) => {
+                  const noteData = getNoteData(note.absoluteIndex);
+                  return (
+                    <div key={`note-${index}`} className="flex flex-col items-center">
+                      <span className="text-2xl font-bold text-slate-800">{noteData.label}</span>
+                      <span className="text-sm text-slate-500">{noteData.ko}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="overflow-x-auto py-4 scrollbar-hide">
+                <div className="flex justify-center min-w-max pb-4">
+                  {generatePianoKeys().map((keyGroup, idx) => {
+                    const isWhiteActive = isNoteActive(keyGroup.white);
+                    const isBlackActive = keyGroup.hasBlack && isNoteActive(keyGroup.black);
+                    
+                    return (
+                      <div key={`white-${idx}`} className="relative">
+                        <div className={`w-10 h-40 md:w-12 md:h-48 border border-slate-300 rounded-b flex items-end justify-center pb-3 transition-colors z-0 ${isWhiteActive ? 'bg-blue-500 shadow-[inset_0_-4px_0_rgba(0,0,0,0.2)]' : 'bg-white'}`}>
+                          {isWhiteActive && <span className="font-bold text-xs text-white">{getNoteData(keyGroup.white).label}</span>}
+                        </div>
+                        {keyGroup.hasBlack && (
+                          <div className={`absolute top-0 -right-2.5 w-5 h-24 md:w-6 md:h-28 rounded-b border border-slate-800 flex items-end justify-center pb-2 z-10 transition-colors ${isBlackActive ? 'bg-blue-500 shadow-[inset_0_-3px_0_rgba(0,0,0,0.3)]' : 'bg-slate-900'}`}>
+                            {isBlackActive && <span className="font-bold text-[10px] text-white">{getNoteData(keyGroup.black).label}</span>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // React 앱을 화면에 그리기
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
